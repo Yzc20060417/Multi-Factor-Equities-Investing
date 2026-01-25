@@ -81,7 +81,7 @@ Ideally we could split the team with everyone interested and responsible of cert
 Finally, before I end this Readme, I recommend some nice resources for the team to get to know more about factors investing:
 
 ### 1. WorldQuant Brain Platform
-Where I get all the factors and commonly used operators logic from. Read the 'Learn' part of the platform (Especially the Sperators section) before you read the notebook 'Factors Pool'.
+Where I get all the factors and commonly used operators logic from. Read the 'Learn' part of the platform (Especially the Operators section) before you read the notebook 'Factors Pool'.
 
 ### 2. Two Sigma Venn
 A nice place to learn about factors investing and how to resolve returns of a portfolio using factors. (Their 'Lens') Also their podcast provides useful insights.
