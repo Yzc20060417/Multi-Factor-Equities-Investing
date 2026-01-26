@@ -462,4 +462,3 @@ def days_from_last_change(series):
 
     days_since_change = (series.index[-1] - last_change_index).days
     return days_since_change
-
