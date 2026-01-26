@@ -1,0 +1,26 @@
+{
+  "format": "parquet",
+  "files": {
+    "close_df": "data/alpha_inputs/close_df.parquet",
+    "returns_df": "data/alpha_inputs/returns_df.parquet",
+    "open_df": "data/alpha_inputs/open_df.parquet",
+    "high_df": "data/alpha_inputs/high_df.parquet",
+    "low_df": "data/alpha_inputs/low_df.parquet",
+    "volume_df": "data/alpha_inputs/volume_df.parquet",
+    "vwap_df": "data/alpha_inputs/vwap_df.parquet",
+    "revenue_df": "data/alpha_inputs/revenue_df.parquet",
+    "gross_profit_df": "data/alpha_inputs/gross_profit_df.parquet",
+    "EV_df": "data/alpha_inputs/EV_df.parquet",
+    "EBIT_df": "data/alpha_inputs/EBIT_df.parquet",
+    "EBITDA_df": "data/alpha_inputs/EBITDA_df.parquet",
+    "PE_df": "data/alpha_inputs/PE_df.parquet",
+    "WACC_df": "data/alpha_inputs/WACC_df.parquet",
+    "cap_df": "data/alpha_inputs/cap_df.parquet",
+    "debt_df": "data/alpha_inputs/debt_df.parquet",
+    "assets_df": "data/alpha_inputs/assets_df.parquet",
+    "liabilities_df": "data/alpha_inputs/liabilities_df.parquet",
+    "equity_df": "data/alpha_inputs/equity_df.parquet",
+    "sharesout_df": "data/alpha_inputs/sharesout_df.parquet",
+    "operating_income_df": "data/alpha_inputs/operating_income_df.parquet"
+  }
+}
