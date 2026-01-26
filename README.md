@@ -86,5 +86,8 @@ Where I get all the factors and commonly used operators logic from. Read the 'Le
 ### 2. Two Sigma Venn
 A nice place to learn about factors investing and how to resolve returns of a portfolio using factors. (Their 'Lens') Also their podcast provides useful insights.
 
-### 3. The Note in the rep
+### 3. Useful Python Libraries/Packages
+Aside of the common libraries like pandas/numpy/statsmodel/scikit-learn, I recommend two useful packages you may use when dealing with specific scenarios. First on is Alphalens, developed by Quantopian, can be really useful when you want to do all kinds of analysis on a specific factor (e.g. Expected Returns, IC statistics, Q-Q Plot) which is available by simply pip installing it. The second one cvxopt, which is really useful when solving constrained convex optimization problems, which you would encounter at the last stage of our strategy - Portfolio Optimization. Similarly pip installing is enough.
+
+### 4. The Note in the rep
 A brief introduction about the popular machine learning techniques that could be used in training factors selection. Note this is only a brief intro, for deeper expertise a lot of online resources are helpful.
