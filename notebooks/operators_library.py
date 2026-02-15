@@ -7,10 +7,10 @@
 
 # In[37]:
 
-
 import numpy as np
 import pandas as pd
-
+import torch
+import torch.nn as nn
 
 # ## Common Functions
 
@@ -351,20 +351,22 @@ def group_rank(df,group):
 # Cross-Sectionally Clip the values
 def winsorize(df,std):
     out = df.copy().astype(float)
-    for time in df.index:
-        row = df.loc[time].values.astype(float)
+    for t in out.index:
+        row = out.loc[t].to_numpy(dtype=float)
         mask = np.isfinite(row)
         if mask.sum() == 0:
             continue
         vals = row[mask]
         mu = vals.mean()
         sigma = vals.std(ddof=1)
-        if sigma == 0:
+        if sigma == 0 or not np.isfinite(sigma):
             continue
         lo = mu - std * sigma
         hi = mu + std * sigma
-        row_clipped = np.clip(row, lo, hi)
-        out.loc[time] = row_clipped
+        row2 = row.copy()
+        row2[mask] = np.clip(row[mask], lo, hi)
+        row2[~mask] = np.nan
+        out.loc[t] = row2
     return out
 
 # Backward fill window of missing values
@@ -462,3 +464,151 @@ def days_from_last_change(series):
 
     days_since_change = (series.index[-1] - last_change_index).days
     return days_since_change
+
+# Non-explode Divide
+def safe_div(a, b, eps=1e-12):
+    return a / (b.replace(0, np.nan) + eps)
+
+# NLTSMOM (MLP)
+def mlp1d_apply(s_df, w1, w2):
+    """
+    Apply 1D MLP: f(s)= sum_j w2[j] * tanh(w1[j] * s)
+    s_df: DataFrame (T x N) or Series
+    w1, w2: 1D arrays length H
+    """
+    w1 = np.asarray(w1, dtype=float)
+    w2 = np.asarray(w2, dtype=float)
+
+    if isinstance(s_df, pd.Series):
+        x = s_df.to_numpy(dtype=float)
+        h = np.tanh(x[:, None] * w1[None, :])
+        out = (h * w2[None, :]).sum(axis=1)
+        return pd.Series(out, index=s_df.index, name=s_df.name)
+
+    x = s_df.to_numpy(dtype=float)               # (T, N)
+    h = np.tanh(x[:, :, None] * w1[None, None, :])  # (T, N, H)
+    out = (h * w2[None, None, :]).sum(axis=2)    # (T, N)
+    return pd.DataFrame(out, index=s_df.index, columns=s_df.columns)
+
+# 1D MLP fit (Sharpe objective)
+def fit_mlp1d_sharpe(
+    s_df, y_df,
+    train_frac=0.6,
+    val_frac=0.2,
+    n_hidden=16,
+    epochs=40,
+    batch_size=200000,
+    lr=1e-3,
+    weight_decay=1e-3,
+    seed=42,
+    max_samples=2_000_000,   # cap pooled samples for speed
+    device=None,
+    scale_mode="unit_var",   # "unit_var" or "match_s" or None
+):
+    """
+    Learns w1,w2 for f(s)=sum w2*tanh(w1*s) by maximizing Sharpe of r_strat = f(s)*y.
+    Pools across all assets (stacked) within each time slice.
+    """
+
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # --- chronological split by time index (rows)
+    T = len(s_df)
+    t_train = int(train_frac * T)
+    t_val = int((train_frac + val_frac) * T)
+
+    s_tr = s_df.iloc[:t_train].to_numpy(dtype=np.float32).ravel()
+    y_tr = y_df.iloc[:t_train].to_numpy(dtype=np.float32).ravel()
+
+    s_va = s_df.iloc[t_train:t_val].to_numpy(dtype=np.float32).ravel()
+    y_va = y_df.iloc[t_train:t_val].to_numpy(dtype=np.float32).ravel()
+
+    # --- drop NaNs / inf
+    def _clean(s, y):
+        m = np.isfinite(s) & np.isfinite(y)
+        return s[m], y[m]
+
+    s_tr, y_tr = _clean(s_tr, y_tr)
+    s_va, y_va = _clean(s_va, y_va)
+
+    # --- optional subsample for speed
+    rng = np.random.default_rng(seed)
+    if len(s_tr) > max_samples:
+        idx = rng.choice(len(s_tr), size=max_samples, replace=False)
+        s_tr, y_tr = s_tr[idx], y_tr[idx]
+    if len(s_va) > max_samples // 4:
+        idx = rng.choice(len(s_va), size=max_samples // 4, replace=False)
+        s_va, y_va = s_va[idx], y_va[idx]
+
+    # --- odd symmetry augmentation: (s,y) plus (-s,-y)
+    s_tr = np.concatenate([s_tr, -s_tr], axis=0)
+    y_tr = np.concatenate([y_tr, -y_tr], axis=0)
+
+    # --- torch tensors
+    torch.manual_seed(seed)
+    s_tr_t = torch.from_numpy(s_tr).to(device)
+    y_tr_t = torch.from_numpy(y_tr).to(device)
+    s_va_t = torch.from_numpy(s_va).to(device)
+    y_va_t = torch.from_numpy(y_va).to(device)
+
+    # --- parameters (no bias)
+    w1 = torch.nn.Parameter(0.1 * torch.randn(n_hidden, device=device))
+    w2 = torch.nn.Parameter(0.1 * torch.randn(n_hidden, device=device))
+
+    opt = torch.optim.AdamW([w1, w2], lr=lr, weight_decay=weight_decay)
+
+    def f_map(s):
+        # s: (B,)
+        h = torch.tanh(s[:, None] * w1[None, :])          # (B,H)
+        return (h * w2[None, :]).sum(dim=1)              # (B,)
+
+    def neg_sharpe(rs, eps=1e-8):
+        num = rs.sum()
+        den = torch.sqrt((rs * rs).sum() + eps)
+        return -(num / den)
+
+    best = {"score": -1e18, "w1": None, "w2": None}
+
+    n = s_tr_t.shape[0]
+    for ep in range(epochs):
+        # minibatch shuffle
+        idx = torch.randperm(n, device=device)
+        for start in range(0, n, batch_size):
+            j = idx[start:start + batch_size]
+            sb = s_tr_t[j]
+            yb = y_tr_t[j]
+
+            rs = f_map(sb) * yb
+            loss = neg_sharpe(rs)
+
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+
+        # validation score
+        with torch.no_grad():
+            rs_va = f_map(s_va_t) * y_va_t
+            score = (-neg_sharpe(rs_va)).item()
+            if score > best["score"]:
+                best["score"] = score
+                best["w1"] = w1.detach().cpu().numpy().copy()
+                best["w2"] = w2.detach().cpu().numpy().copy()
+
+    # --- post scaling (train-only) to stabilize magnitude
+    w1b, w2b = best["w1"], best["w2"]
+    f_tr = np.tanh(s_tr[:len(s_tr)//2][:, None] * w1b[None, :]) @ w2b  # de-aug first half approx ok
+    if scale_mode == "unit_var":
+        scale = 1.0 / (np.nanstd(f_tr) + 1e-12)
+    elif scale_mode == "match_s":
+        scale = (np.nanstd(s_tr[:len(s_tr)//2]) / (np.nanstd(f_tr) + 1e-12))
+    else:
+        scale = 1.0
+
+    return {
+        "w1": w1b,
+        "w2": w2b,
+        "scale": float(scale),
+        "val_score": float(best["score"]),
+        "device": device,
+    }
