@@ -450,12 +450,18 @@ def if_else(cond, a, b):
 
 # Scale within a certain group to (0,1)
 def group_scale(x, group):
-    group_min = group.min()
-    group_max = group.max()
+    group = group.reindex(x.columns)
+    out = pd.DataFrame(index=x.index, columns=x.columns, dtype=float)
 
-    normalized_x = (x - group_min) / (group_max - group_min)
+    for g in group.dropna().unique():
+        cols = group.index[group == g]
+        block = x[cols]
+        row_min = block.min(axis=1)
+        row_max = block.max(axis=1)
+        denom = (row_max - row_min).replace(0, np.nan)
+        out[cols] = block.sub(row_min, axis=0).div(denom, axis=0)
 
-    return normalized_x
+    return out
 
 # Compute the days passed from the last change of current value
 def days_from_last_change(series):
