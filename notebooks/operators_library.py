@@ -419,6 +419,7 @@ def if_else(cond, a, b):
         cond_df = cond.to_frame()
     else:
         cond_df = cond
+    cond_df = cond_df.fillna(False).to_numpy(dtype=bool)
     if np.isscalar(a) and np.isscalar(b):
         return pd.DataFrame(
             np.where(cond_df.values, a, b),
